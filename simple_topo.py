@@ -22,10 +22,10 @@ class MyTopo(Topo):
         h2=self.addHost('h2')
         h3=self.addHost('h3')
 
-        self.addLink(s1, h1, bw=1, delay='0ms', loss=0, max_queue_size=1000, use_htb=True)
-        self.addLink(s1, h2, bw=1, delay='0ms', loss=0, max_queue_size=1000, use_htb=True)
-        self.addLink(s1, s2, bw=1, delay='0ms', loss=0, max_queue_size=1000, use_htb=True)
-        self.addLink(s2, h3, bw=1, delay='0ms', loss=0, max_queue_size=1000, use_htb=True)
+        self.addLink(s1, h1, bw=10, delay='0ms', loss=0, max_queue_size=1000, use_htb=True)
+        self.addLink(s1, h2, bw=10, delay='0ms', loss=0, max_queue_size=1000, use_htb=True)
+        self.addLink(s1, s2, bw=10, delay='0ms', loss=0, max_queue_size=1000, use_htb=True)
+        self.addLink(s2, h3, bw=10, delay='0ms', loss=0, max_queue_size=1000, use_htb=True)
 
 def perfTest():
     "Create network and run simple performance test"

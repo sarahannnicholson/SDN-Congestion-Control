@@ -1,4 +1,3 @@
-
 from ryu.base import app_manager
 from ryu.controller import ofp_event
 from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER
@@ -13,11 +12,12 @@ import monitor
 
 class SimpleSwitch13(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
+    _CONTEXTS = {"monitor": monitor.NetworkMonitor}
 
     def __init__(self, *args, **kwargs):
         super(SimpleSwitch13, self).__init__(*args, **kwargs)
         self.mac_to_port = {}
-        monitor.NetworkMonitor()
+        self.monitor = kwargs["monitor"]
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -51,8 +51,6 @@ class SimpleSwitch13(app_manager.RyuApp):
 
           #when the traffic generated from h1 will be applied to meter_id=1
           match = parser.OFPMatch(in_port=1, eth_type=0x0800, ipv4_src="10.0.0.1", ipv4_dst="10.0.0.2")
-          subprocess.call(["sudo", "ovs-vsctl", "set", "interface", 's1' + "-eth" + "1", "ingress_policing_burst=10"])
-          subprocess.call(["sudo", "ovs-vsctl", "set", "interface", 's1' + "-eth" + "1", "ingress_policing_rate=100"])
           actions = [parser.OFPActionOutput(2)]
           inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions), parser.OFPInstructionMeter(1,ofproto.OFPIT_METER)]
           mod = datapath.ofproto_parser.OFPFlowMod(
