@@ -21,40 +21,48 @@ class NetworkMonitor(app_manager.RyuApp):
         self.bw_min = 100
         self.datapaths = {}
         self.query_interval = 2
-        self.port_speed = {}
-        self.flow_speed = {}
-        self.state_len = 3
         self.flow_byte_counts = {}
         self.monitor_thread = hub.spawn(self._monitor)
         self.rate_limited_switches = []
-        self.switch_interfaces = ["s1-eth3", "s2-eth1"]
-        self.dpids = {0x1: "s1", 0x2: "s2"}
+        self.simple_switch_interfaces = ["s1-eth3", "s2-eth1"]
+        self.complex_switch_interfaces = ["s1-eth3", "s2-eth3", "s3-eth1", "s3-eth2", "s3-eth3", "s4-eth1", "s4-eth2",
+                                          "s5-eth1", "s5-eth2", "s5-eth3", "s6-eth3", "s7-eth3"]
+        self.simple_dpids = {0x1: "s1", 0x2: "s2"}
+        self.complex_dpids = {0x1: "s1", 0x2: "s2", 0x3: "s3", 0x4: "s4", 0x5: "s5", 0x6: "s6", 0x7: "s7"}
+        print "Topology: ", CONF.topo
 
-    def apply_rate_limiting(self, switch, in_port, out_port, rate):
+    # Applies ingress restriction to a high bw switch/port
+    def apply_rate_limiting(self, switch, in_port, out_port, eth_dst, rate):
         c_rate = int(ceil(rate))
-        switch_id = switch + "-eth" + str(in_port) + str(out_port)
+        switch_id = switch + "-eth" + str(in_port) + str(out_port) + str(eth_dst)
         ingressPolicingBurst, ingressPolicingRate = "ingress_policing_burst=10", "ingress_policing_rate=5000"
         if not switch_id in self.rate_limited_switches:
             self.rate_limited_switches.append(switch_id)
-            print "\n\n ------------------- \n", "rate limiting ", switch_id, "\n-------------------"
+            print "\n\n------------------- \n", "rate limiting ", switch_id, "\n-------------------"
             subprocess.call(["sudo", "ovs-vsctl", "set", "interface", switch + "-eth" + str(in_port), ingressPolicingBurst])
             subprocess.call(["sudo", "ovs-vsctl", "set", "interface", switch + "-eth" + str(in_port), ingressPolicingRate])
 
-    def revoke_rate_limiting(self, switch, in_port, out_port, rate):
-        switch_id = switch + "-eth" + str(in_port) + str(out_port)
+    # Removes ingress restriction to a high bw switch/port
+    def revoke_rate_limiting(self, switch, in_port, out_port, eth_dst, rate):
+        switch_id = switch + "-eth" + str(in_port) + str(out_port) + str(eth_dst)
         ingressPolicingBurst, ingressPolicingRate = "ingress_policing_burst=0", "ingress_policing_rate=0"
         if switch_id in self.rate_limited_switches:
             self.rate_limited_switches.remove(switch_id)
-            print "\n\n ------------------- \n", "undo rate limiting ", switch_id, "\n-------------------"
+            print "\n\n------------------- \n", "undo rate limiting ", switch_id, "\n-------------------"
             subprocess.call(["sudo", "ovs-vsctl", "set", "interface", switch + "-eth" + str(in_port), ingressPolicingBurst])
             subprocess.call(["sudo", "ovs-vsctl", "set", "interface", switch + "-eth" + str(in_port), ingressPolicingRate])
+
     # Handler for receipt of flow statistics
-    # Main entry point for our DDoS detection code.
     @set_ev_cls(ofp_event.EventOFPFlowStatsReply, MAIN_DISPATCHER)
     def _flow_stats_reply_handler(self, ev):
         body = ev.msg.body
         dpid = int(ev.msg.datapath.id)
-        switch = self.dpids[dpid]
+        if CONF.topo == 'simple':
+            switch = self.simple_dpids[dpid]
+            switch_interfaces = self.simple_switch_interfaces
+        elif CONF.topo == 'datacenter':
+            switch = self.complex_dpids[dpid]
+            switch_interfaces = self.complex_switch_interfaces
         print "-------------- Flow stats for switch", switch, "---------------"
 
         # Iterate through all statistics reported for the flow
@@ -76,11 +84,11 @@ class NetworkMonitor(app_manager.RyuApp):
 
             switch_id = switch + "-eth" + str(in_port)
             if rate > self.bw_threshold:
-                if not switch_id in self.switch_interfaces:
-                    self.apply_rate_limiting(switch, in_port, out_port, rate)
+                if not switch_id in switch_interfaces:
+                    self.apply_rate_limiting(switch, in_port, out_port, eth_dst, rate)
             elif rate < self.bw_min:
-                if not switch_id in self.switch_interfaces:
-                    self.revoke_rate_limiting(switch, in_port, out_port, rate)
+                if not switch_id in switch_interfaces:
+                    self.revoke_rate_limiting(switch, in_port, out_port, eth_dst, rate)
 
     @set_ev_cls(ofp_event.EventOFPStateChange,[MAIN_DISPATCHER, DEAD_DISPATCHER])
     def _state_change_handler(self, ev):
@@ -108,9 +116,7 @@ class NetworkMonitor(app_manager.RyuApp):
         return bytes * 8.0 / (self.query_interval * 1024)
 
     def _monitor(self):
-        print "monitor..."
         while True:
-            print "monitor datapaths = ", self.datapaths.values()
             for dp in self.datapaths.values():
                  self._request_stats(dp)
             hub.sleep(self.query_interval)
